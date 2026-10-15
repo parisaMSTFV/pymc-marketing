@@ -1,0 +1,146 @@
+name: Validate Lift Calibration Notebooks
+
+on:
+  push:
+    branches:
+      - ci/validate-lift-notebooks
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  execute-notebook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        notebook: [mmm_prior_sensitivity, mmm_roas]
+    env:
+      PYTHONUNBUFFERED: "1"
+      NOTEBOOK: ${{ matrix.notebook }}
+    steps:
+      - name: Check out notebook changes
+        uses: actions/checkout@v7
+        with:
+          ref: docs/refresh-lift-calibration-results
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+      - name: Install build requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz graphviz-dev
+          uv venv --python 3.12
+          uv pip install -e '.[docs,test,dag]'
+      - name: Execute the notebook with real sampling
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          import nbformat
+          import papermill
+
+          name = os.environ["NOTEBOOK"]
+          source = Path("docs/source/notebooks/mmm") / f"{name}.ipynb"
+          output_dir = Path("validation-output")
+          output_dir.mkdir(exist_ok=True)
+          temp_input = output_dir / f"{name}.input.ipynb"
+          temp_output = output_dir / f"{name}.executed.ipynb"
+          final_output = output_dir / f"{name}.ipynb"
+
+          check_code = """
+          import json
+          import os
+          from pathlib import Path
+
+          def summarize_diagnostics(model):
+              return {k: float(v) for k, v in convergence_summary(model).items()}
+
+          notebook_name = os.environ["NOTEBOOK"]
+          report = {"notebook": notebook_name}
+          if notebook_name == "mmm_prior_sensitivity":
+              report["models"] = {
+                  "baseline": summarize_diagnostics(business_mmm),
+                  "calibrated": summarize_diagnostics(lift_mmm),
+              }
+              report["roas"] = {
+                  "baseline": roas_summary(business_mmm).reset_index().to_dict("records"),
+                  "calibrated": roas_summary(lift_mmm).reset_index().to_dict("records"),
+              }
+          else:
+              report["models"] = {
+                  "baseline": summarize_diagnostics(mmm),
+                  "calibrated": summarize_diagnostics(mmm_lift),
+              }
+              report["folds"] = fold_diagnostics.reset_index().to_dict("records")
+              report["crps"] = crps_by_fold.reset_index().to_dict("records")
+              report["true_roas"] = {"x1": float(true_roas_x1), "x2": float(true_roas_x2)}
+          metrics = list(report["models"].values()) + report.get("folds", [])
+          report["sampler_checks_pass"] = all(
+              m["divergences"] == 0
+              and m["max_r_hat"] < 1.01
+              and m["min_ess_bulk"] >= 400
+              and m["min_ess_tail"] >= 400
+              for m in metrics
+          )
+          report_path = Path(os.environ["GITHUB_WORKSPACE"]) / "validation-output" / (notebook_name + ".json")
+          report_path.write_text(json.dumps(report, indent=2, default=str))
+          print("Validation summary:", report_path)
+          print(json.dumps({"sampler_checks_pass": report["sampler_checks_pass"], "models": report["models"]}, indent=2))
+          """
+          nb = nbformat.read(source, as_version=4)
+          expected_cells = len(nb.cells)
+          nb.cells.append(nbformat.v4.new_code_cell(check_code))
+          nbformat.write(nb, temp_input)
+          papermill.execute_notebook(
+              input_path=str(temp_input),
+              output_path=str(temp_output),
+              cwd=str(source.parent),
+              kernel_name="python3",
+              progress_bar=False,
+          )
+          executed = nbformat.read(temp_output, as_version=4)
+          if len(executed.cells) != expected_cells + 1:
+              raise RuntimeError("Unexpected notebook cell count")
+          errors = [
+              (i, output.get("ename"))
+              for i, cell in enumerate(executed.cells)
+              if cell.cell_type == "code"
+              for output in cell.get("outputs", [])
+              if output.output_type == "error"
+          ]
+          if errors:
+              raise RuntimeError(f"Notebook execution errors: {errors}")
+          executed.cells = executed.cells[:-1]
+          for cell in executed.cells:
+              cell.metadata.pop("papermill", None)
+          executed.metadata.pop("papermill", None)
+          nbformat.write(executed, final_output)
+          print(f"Executed {name} with {expected_cells} original cells")
+          PY
+      - name: Upload execution artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-${{ matrix.notebook }}
+          path: validation-output/
+          if-no-files-found: warn
+      - name: Publish validated notebook to separate result branch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "validation-output/$NOTEBOOK.ipynb" "docs/source/notebooks/mmm/$NOTEBOOK.ipynb"
+          git switch -c "validation/$NOTEBOOK"
+          git config user.name "GitHub Actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "docs/source/notebooks/mmm/$NOTEBOOK.ipynb"
+          mkdir -p validation-results
+          cp "validation-output/$NOTEBOOK.json" "validation-results/$NOTEBOOK.json"
+          git add "validation-results/$NOTEBOOK.json"
+          git commit -m "Record executed $NOTEBOOK results"
+          git push origin "HEAD:refs/heads/validation/$NOTEBOOK"
