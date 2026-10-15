@@ -1,0 +1,52 @@
+{
+  "notebook": "mmm_prior_sensitivity",
+  "models": {
+    "baseline": {
+      "divergences": 0.0,
+      "max_r_hat": 1.0019880685116647,
+      "min_ess_bulk": 1883.0303318679219,
+      "min_ess_tail": 2268.4428262075276
+    },
+    "calibrated": {
+      "divergences": 0.0,
+      "max_r_hat": 1.0031522640751405,
+      "min_ess_bulk": 3074.5625785861675,
+      "min_ess_tail": 2967.6530070229533
+    }
+  },
+  "roas": {
+    "baseline": [
+      {
+        "index": "ROAS[x1]",
+        "mean": 170.6,
+        "sd": 9.6,
+        "hdi94_lb": 152.6,
+        "hdi94_ub": 188.9
+      },
+      {
+        "index": "ROAS[x2]",
+        "mean": 143.6,
+        "sd": 11.1,
+        "hdi94_lb": 123.0,
+        "hdi94_ub": 164.5
+      }
+    ],
+    "calibrated": [
+      {
+        "index": "ROAS[x1]",
+        "mean": 110.6,
+        "sd": 6.4,
+        "hdi94_lb": 100.1,
+        "hdi94_ub": 123.9
+      },
+      {
+        "index": "ROAS[x2]",
+        "mean": 142.0,
+        "sd": 13.8,
+        "hdi94_lb": 116.4,
+        "hdi94_ub": 167.9
+      }
+    ]
+  },
+  "sampler_checks_pass": true
+}
