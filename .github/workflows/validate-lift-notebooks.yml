@@ -89,6 +89,8 @@ jobs:
           )
           report_path = Path(os.environ["GITHUB_WORKSPACE"]) / "validation-output" / (notebook_name + ".json")
           report_path.write_text(json.dumps(report, indent=2, default=str))
+          if not report["sampler_checks_pass"]:
+              raise RuntimeError("Sampler diagnostics failed; see validation report")
           print("Validation summary:", report_path)
           print(json.dumps({"sampler_checks_pass": report["sampler_checks_pass"], "models": report["models"]}, indent=2))
           """
