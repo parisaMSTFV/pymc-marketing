@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        notebook: [mmm_prior_sensitivity, mmm_roas]
+        notebook: [mmm_roas]
     env:
       PYTHONUNBUFFERED: "1"
       NOTEBOOK: ${{ matrix.notebook }}
@@ -135,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           cp "validation-output/$NOTEBOOK.ipynb" "docs/source/notebooks/mmm/$NOTEBOOK.ipynb"
-          git switch -c "validation/$NOTEBOOK"
+          git switch -c "validation/$NOTEBOOK-$GITHUB_RUN_ID"
           git config user.name "GitHub Actions"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "docs/source/notebooks/mmm/$NOTEBOOK.ipynb"
@@ -143,4 +143,4 @@ jobs:
           cp "validation-output/$NOTEBOOK.json" "validation-results/$NOTEBOOK.json"
           git add "validation-results/$NOTEBOOK.json"
           git commit -m "Record executed $NOTEBOOK results"
-          git push origin "HEAD:refs/heads/validation/$NOTEBOOK"
+          git push origin "HEAD:refs/heads/validation/$NOTEBOOK-$GITHUB_RUN_ID"
